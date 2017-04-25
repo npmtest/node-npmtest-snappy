@@ -607,19 +607,32 @@ local.templateApidocHtml = '\
                 template: local.templateApidocHtml
             }, 2);
             // init exampleList
-            options.exampleList = options.exampleList.concat(options.exampleFileList.concat(
-                local.fs.readdirSync(options.dir)
-                    .sort()
-                    .filter(function (file) {
-                        return file.indexOf(options.env.npm_package_main) === 0 ||
-                            (/^(?:readme)\b/i).test(file) ||
-                            (/^(?:index|lib|test)\b.*\.js$/i).test(file);
-                    })
-            ).map(readExample))
-                .filter(function (element) {
-                    return element.trim();
-                })
-                .slice(0, 128);
+            [1, 2, 3, 4].forEach(function (depth) {
+                options.exampleList = options.exampleList.concat(
+                    // http://stackoverflow.com
+                    // /questions/4509624/how-to-limit-depth-for-recursive-file-list
+                    // find . -maxdepth 1 -mindepth 1 -name "*.js" -type f
+                    local.child_process.execSync('find "' + options.dir +
+                        '" -maxdepth ' + depth + ' -mindepth ' + depth +
+                        ' -type f | sed -e "s|' + options.dir +
+                        '/||" | grep -iv ' +
+/* jslint-ignore-begin */
+'"\
+/\\.\\|\\(\\b\\|_\\)\\(\
+bower_component\\|\
+coverage\\|\
+min\\|\
+node_module\\|\
+rollup\\|\
+tmp\\|\
+vendor\\)s\\{0,1\\}\\(\\b\\|_\\)\
+" ' +
+/* jslint-ignore-end */
+                            ' | sort | head -n 4096').toString()
+                        .split('\n')
+                );
+            });
+            options.exampleList = options.exampleList.slice(0, 128).map(readExample);
             // init moduleMain
             local.tryCatchOnError(function () {
                 console.error('apidocCreate - requiring ' + options.dir + ' ...');
@@ -706,6 +719,7 @@ log\\|\
 min\\|mock\\|\
 node_module\\|\
 rollup\\|\
+spec\\|\
 test\\|tmp\\|\
 vendor\\)s\\{0,1\\}\\(\\b\\|_\\)\
 " ' +
@@ -10124,7 +10138,7 @@ local.assetsDict['/assets.readmeCustomOrg.npmdoc.template.md'] = '\
 # npmdoc-{{env.npm_package_name}} \
 \n\
 \n\
-#### api documentation for \
+#### basic api documentation for \
 {{#if env.npm_package_homepage}} \
 [{{env.npm_package_name}} (v{{env.npm_package_version}})]({{env.npm_package_homepage}}) \
 {{#unless env.npm_package_homepage}} \
@@ -15694,7 +15708,7 @@ instruction\n\
                         // jslint-hack
                         local.nop(error);
                         console.error('cli.customOrgStarFilterNotBuilt - fetched ' + xhr.url);
-                        (xhr.responseText || '').replace((
+                        (xhr.responseText || '').toLowerCase().replace((
                             /href=\"\/package\/(.+?)\"/g
                         ), function (match0, match1) {
                             match0 = local.env.GITHUB_ORG + '/node-' + local.env.GITHUB_ORG +
@@ -15703,27 +15717,36 @@ instruction\n\
                                 return;
                             }
                             onParallel.counter += 1;
-                            local.ajax({
+                            local.onParallelList({ list: [{
                                 url: 'https://raw.githubusercontent.com/' + match0 +
                                     '/gh-pages/build..alpha..travis-ci.org' +
                                     '/screenCapture.npmPackageListing.svg'
-                            }, function (error) {
-                                if (error) {
-                                    console.error('adding ' + match0);
-                                    options.dict[match0] = true;
-                                }
+                            }, {
+                                url: 'https://registry.npmjs.org/' + local.env.GITHUB_ORG +
+                                    '-' + match1
+                            }] }, function (options2, onParallel) {
+                                onParallel.counter += 1;
+                                local.ajax(options2.element, function (error) {
+                                    if (error && !options.dict[match0]) {
+                                        options.dict[match0] = true;
+                                        console.error(
+                                            'cli.customOrgStarFilterNotBuilt - not built - ' +
+                                                match0
+                                        );
+                                        console.log(match0);
+                                    }
+                                    onParallel();
+                                });
+                            }, function () {
                                 onParallel();
                             });
                         });
                         onParallel();
                     });
-                }, function () {
-                    console.log(Object.keys(options.dict).join('\n'));
-                    local.exit();
-                });
+                }, local.onErrorThrow);
             }());
             return;
-        case 'dbTableCustomOrgCrudGetManyByQuery':
+        case 'cli.dbTableCustomOrgCrudGetManyByQuery':
             local.dbTableCustomOrgCreate(JSON.parse(process.argv[3] || '{}'), function (error) {
                 // validate no error occurred
                 local.assert(!error, error);
@@ -15736,7 +15759,7 @@ instruction\n\
                     .join('\n'));
             });
             return;
-        case 'dbTableCustomOrgUpdate':
+        case 'cli.dbTableCustomOrgUpdate':
             local.dbTableCustomOrgUpdate(
                 JSON.parse(process.argv[3] || '{}'),
                 local.onErrorThrow
